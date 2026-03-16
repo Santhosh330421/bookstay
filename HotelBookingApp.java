@@ -1,73 +1,118 @@
-import java.util.LinkedList;
-import java.util.Queue;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
-class Reservation {
-    private String guestName;
-    private String roomType;
 
-    public Reservation(String guestName, String roomType) {
-        this.guestName = guestName;
-        this.roomType = roomType;
+class RoomAllocatorService {
+    private RoomInventory inventory;
+    private Set<String> allocatedRoomIds;
+    private HashMap<String, Set<String>> allocatedRoomsByType;
+    private HashMap<String, Integer> roomCounters;
+
+    public RoomAllocatorService(RoomInventory inventory) {
+        this.inventory = inventory;
+        this.allocatedRoomIds = new HashSet<>();
+        this.allocatedRoomsByType = new HashMap<>();
+        this.roomCounters = new HashMap<>();
     }
 
-    public String getGuestName() {
-        return guestName;
-    }
+    public void processNextReservation(BookingRequestQueue bookingQueue) {
+        Reservation reservation = bookingQueue.getNextRequest();
 
-    public String getRoomType() {
-        return roomType;
-    }
-
-    public void displayReservation() {
-        System.out.println("Guest Name : " + guestName);
-        System.out.println("Room Type  : " + roomType);
-    }
-}
-
-class BookingRequestQueueManager {
-    private Queue<Reservation> requestQueue;
-
-    public BookingRequestQueueManager() {
-        requestQueue = new LinkedList<>();
-    }
-
-    public void addRequest(Reservation reservation) {
-        requestQueue.offer(reservation);
-        System.out.println("Booking request added for " + reservation.getGuestName());
-    }
-
-    public void displayRequests() {
-        System.out.println("\n=== Current Booking Request Queue ===");
-        if (requestQueue.isEmpty()) {
-            System.out.println("No booking requests in the queue.");
+        if (reservation == null) {
+            System.out.println("No booking requests available.");
             return;
         }
 
-        for (Reservation reservation : requestQueue) {
-            reservation.displayReservation();
-            System.out.println("-----------------------------");
+        String roomType = reservation.getRoomType();
+
+        System.out.println("Processing request for " + reservation.getGuestName() + "...");
+        if (inventory.getAvailability(roomType) <= 0) {
+            System.out.println("Reservation could not be confirmed. No rooms available for " + roomType);
+            return;
+        }
+
+        String roomId = generateUniqueRoomId(roomType);
+
+        reservation.confirmReservation(roomId);
+        inventory.decrementAvailability(roomType);
+
+        allocatedRoomsByType.computeIfAbsent(roomType, k -> new HashSet<>()).add(roomId);
+
+        System.out.println("Reservation confirmed successfully.");
+        reservation.displayReservation();
+    }
+
+    private String generateUniqueRoomId(String roomType) {
+        String prefix = getRoomPrefix(roomType);
+        int nextNumber = roomCounters.getOrDefault(roomType, 0) + 1;
+        String roomId = prefix + nextNumber;
+
+        while (allocatedRoomIds.contains(roomId)) {
+            nextNumber++;
+            roomId = prefix + nextNumber;
+        }
+
+        roomCounters.put(roomType, nextNumber);
+        allocatedRoomIds.add(roomId);
+
+        return roomId;
+    }
+
+    private String getRoomPrefix(String roomType) {
+        if (roomType.equalsIgnoreCase("Single Room")) {
+            return "S";
+        } else if (roomType.equalsIgnoreCase("Double Room")) {
+            return "D";
+        } else if (roomType.equalsIgnoreCase("Suite Room")) {
+            return "SU";
+        } else {
+            return "R";
+        }
+    }
+
+    public void displayAllocatedRooms() {
+        System.out.println("=== Allocated Rooms ===");
+        if (allocatedRoomsByType.isEmpty()) {
+            System.out.println("No rooms have been allocated yet.");
+            return;
+        }
+
+        for (Map.Entry<String, Set<String>> entry : allocatedRoomsByType.entrySet()) {
+            System.out.println(entry.getKey() + " -> " + entry.getValue());
         }
     }
 }
 
-public class BookingRequestQueue {
+public class UseCase6RoomAllocationService {
     public static void main(String[] args) {
+        RoomInventory inventory = new RoomInventory();
+        inventory.addRoomType("Single Room", 2);
+        inventory.addRoomType("Double Room", 1);
+        inventory.addRoomType("Suite Room", 1);
 
-        BookingRequestQueueManager bookingQueue = new BookingRequestQueueManager();
+        BookingRequestQueue bookingQueue = new BookingRequestQueue();
+        bookingQueue.addRequest(new Reservation("Alice", "Single Room"));
+        bookingQueue.addRequest(new Reservation("Bob", "Double Room"));
+        bookingQueue.addRequest(new Reservation("Charlie", "Single Room"));
+        bookingQueue.addRequest(new Reservation("David", "Suite Room"));
+        bookingQueue.addRequest(new Reservation("Eva", "Single Room"));
 
-        Reservation r1 = new Reservation("Alice", "Single Room");
-        Reservation r2 = new Reservation("Bob", "Double Room");
-        Reservation r3 = new Reservation("Charlie", "Suite Room");
-        Reservation r4 = new Reservation("David", "Single Room");
+        RoomAllocatorService allocationService = new RoomAllocatorService(inventory);
 
         System.out.println("=== Book My Stay App ===");
-        System.out.println("Use Case 5: Booking Request Queue (First-Come-First-Served)\n");
+        System.out.println("Use Case 6: Reservation Confirmation & Room Allocation");
+        System.out.println();
 
-        bookingQueue.addRequest(r1);
-        bookingQueue.addRequest(r2);
-        bookingQueue.addRequest(r3);
-        bookingQueue.addRequest(r4);
+        while (!bookingQueue.isEmpty()) {
+            allocationService.processNextReservation(bookingQueue);
+        }
 
-        bookingQueue.displayRequests();
+        System.out.println();
+        allocationService.displayAllocatedRooms();
+
+        System.out.println();
+        inventory.displayInventory();
     }
 }
